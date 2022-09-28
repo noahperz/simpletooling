@@ -17,6 +17,7 @@ import javax.mail.internet.MimeMessage;
 
 import org.openqa.selenium.By;
 import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.StaleElementReferenceException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
@@ -59,7 +60,7 @@ public class DataManager {
         this.receiver = receiver;
     }
 
-    public void getRecentData() {        
+    public void getRecentData() {
         this.size = svg.getSize().getWidth() - this.DIST_FROM_LEFT;
         this.startPos = ((svg.getSize().getWidth() / 2)) - (this.size);
         this.distBetweenData = this.size / (double) this.SEGMENTS_OF_DATA;
@@ -71,23 +72,28 @@ public class DataManager {
 
         for (String thisLine : linesOfTime) {
             if (thisLine.contains(":")) {
-                //Remove the leading 0 from AM times unless its 00:xx
-                if (thisLine.charAt(0) == '0' && thisLine.charAt(1) != '0'){
+                //Remove the leading 0 from AM times (slightly modified as of sept 27: the program previosuly assumed that times 
+                //between midnight and 1 AM were formatted as 00:xx, when in reality they are formatted as 0:xx)
+                if (thisLine.charAt(0) == '0') {
                     thisLine = thisLine.substring(1, thisLine.length());
                 }
                 this.time = thisLine;
-                Scanner sc = new Scanner(this.time);
-                sc.useDelimiter(":");
-                int hours = sc.nextInt();
-                int minutes = sc.nextInt();
-                amtOfElapsedIntervals = (hours * 12) + (minutes / 5) - 5;
+                //amtOfElapsedIntervals method new as of sept 27
+                amtOfElapsedIntervals = this.getIntervals(this.time) - 5;
                 //The -5 is to reduce the likelyhood of a NoSuchElementException by trying to place the estimated position slightly to
                 //the left of the desired datapoint, meaning a tooltip that is to be held in the "tooltip" WebElement does in fact exist
             }
         }
 
         //Declare the approximate position and make slight adjustments to this position until the desired datapoint is found
+                
         int approxPosition = (int) (this.startPos + (distBetweenData * amtOfElapsedIntervals));
+        
+        //New if statement as of sept 27, makes sure the program doesn't look out of bounds
+        if (approxPosition < this.startPos){
+            approxPosition = (int)this.startPos;
+        }
+        
         Actions moveCursorAction = new Actions(this.driver);
         boolean currentIntervalFound = false;
 
@@ -126,34 +132,54 @@ public class DataManager {
     }
 
     public void valueManager() {
-        //If the data has changed, send the email
-        if (!this.data.equals(this.beforeData) && !this.beforeTime.equals("") && !this.beforeData.equals("")) {
-            try {
-                Message message = new MimeMessage(this.session);
-                message.setFrom(new InternetAddress("testnotifier1234@gmail.com"));
-                message.setRecipient(Message.RecipientType.TO, new InternetAddress(this.receiver));
-                message.setSubject("Load Change Detected (at " + this.time + " EST)");
-                message.setText("Previous data (at " + this.beforeTime + "): " + this.beforeData
-                        + "\nNew data (at " + this.time + "): " + this.data);
-                Transport.send(message);
-                this.beforeTime = this.time;
-                this.beforeData = this.data;
-            } catch (MessagingException ex) {
-                ex.printStackTrace();
+        //If the data has changed, and what is labeled as the most recent time is actually the most recent time (SEPT 27 FIX), send the email
+        if (!this.beforeTime.equals("") && !this.beforeData.equals("")) {
+            int beforeIntervals = this.getIntervals(this.beforeTime);
+            int currentIntervals = this.getIntervals(this.time);
+            if (!this.data.equals(this.beforeData) && beforeIntervals < currentIntervals) {
+                try {
+                    Message message = new MimeMessage(this.session);
+                    message.setFrom(new InternetAddress("testnotifier1234@gmail.com"));
+                    message.setRecipient(Message.RecipientType.TO, new InternetAddress(this.receiver));
+                    message.setSubject("Load Change Detected (at " + this.time + " EST)");
+                    message.setText("Previous data (at " + this.beforeTime + "): " + this.beforeData
+                            + "\nNew data (at " + this.time + "): " + this.data);
+                    Transport.send(message);
+                    this.beforeTime = this.time;
+                    this.beforeData = this.data;
+                } catch (MessagingException ex) {
+                    ex.printStackTrace();
+                }
             }
-        } else if (beforeTime.equals("") && this.beforeData.equals("")) {
+        } else {
             this.beforeTime = this.time;
             this.beforeData = this.data;
         }
     }
 
+    public int getIntervals(String timeStr) {
+        //New as of sept 27: Used to calculate how many 5 minute intervals are in a given xx:xx time string
+        Scanner sc = new Scanner(timeStr);
+        sc.useDelimiter(":");
+        int hours = sc.nextInt();
+        int minutes = sc.nextInt();
+        int amtOfElapsedIntervals = (hours * 12) + (minutes / 5);
+        return amtOfElapsedIntervals;
+    }
+
     public void runner() throws InterruptedException {
         while (this.run == true) {
-            this.getRecentData();
-            this.driver.navigate().refresh();
-            driver.switchTo().frame("56440ec5-34c3-4219-a280-eb7756441501");
-            Thread.sleep(10000);
-            this.svg = new WebDriverWait(this.driver, Duration.ofSeconds(3)).until(ExpectedConditions.presenceOfElementLocated(By.tagName("svg")));
+            //Try catch new as of sept 27: Used to catch seemingly unavoidable but rare "StaleElementReferenceExceptions"
+            try {
+                this.getRecentData();
+                this.driver.navigate().refresh();
+                driver.switchTo().frame("56440ec5-34c3-4219-a280-eb7756441501");
+                Thread.sleep(10000);
+                this.svg = new WebDriverWait(this.driver, Duration.ofSeconds(3)).until(ExpectedConditions.presenceOfElementLocated(By.tagName("svg")));
+            } catch (StaleElementReferenceException Ex) {
+                System.err.println("Page error, refreshing...");
+                this.driver.navigate().refresh();
+            }
         }
     }
 

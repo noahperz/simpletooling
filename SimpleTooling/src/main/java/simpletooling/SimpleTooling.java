@@ -19,6 +19,7 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
+import io.github.bonigarcia.wdm.WebDriverManager;
 
 /**
  *
@@ -49,7 +50,7 @@ public class SimpleTooling {
         String receiver = kbScanner.nextLine();
 
         //Set up ChromeDriver and DataManager object
-        System.setProperty("webdriver.chrome.driver", "chromedriver.exe");
+        WebDriverManager.chromedriver().setup();
         WebDriver driver = new ChromeDriver();
         driver.get("https://www.misoenergy.org/markets-and-operations/real-time--market-data/real-time-displays/");
 
