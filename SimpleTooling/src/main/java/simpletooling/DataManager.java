@@ -16,11 +16,13 @@ import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeMessage;
 
 import org.openqa.selenium.By;
+import org.openqa.selenium.InvalidSelectorException;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.StaleElementReferenceException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -86,14 +88,13 @@ public class DataManager {
         }
 
         //Declare the approximate position and make slight adjustments to this position until the desired datapoint is found
-                
         int approxPosition = (int) (this.startPos + (distBetweenData * amtOfElapsedIntervals));
-        
+
         //New if statement as of sept 27, makes sure the program doesn't look out of bounds
-        if (approxPosition < this.startPos){
-            approxPosition = (int)this.startPos;
+        if (approxPosition < this.startPos) {
+            approxPosition = (int) this.startPos;
         }
-        
+
         Actions moveCursorAction = new Actions(this.driver);
         boolean currentIntervalFound = false;
 
@@ -132,10 +133,30 @@ public class DataManager {
     }
 
     public void valueManager() {
-        //If the data has changed, and what is labeled as the most recent time is actually the most recent time (SEPT 27 FIX), send the email
+        //if the data has changed, and what is labeled as the most recent time is actually the most recent time (SEPT 27 FIX), send the email
+
+        //check to make sure this isn't the first run
         if (!this.beforeTime.equals("") && !this.beforeData.equals("")) {
             int beforeIntervals = this.getIntervals(this.beforeTime);
             int currentIntervals = this.getIntervals(this.time);
+
+            //a few manual checks new as of sept 28 that ensure the program properly functions when the site changes days
+            //the previous time was 23:55, the time is no longer being read as 23:55, and the site did not start displaying the data from
+            //23:50 as the most recent data (this runs whenever a new day's data is being displayed on the site)
+            if (this.beforeTime.equals("23:55") && !this.time.equals("23:55") && !this.time.equals("23:50")) {
+                //ensure an email is sent (presuming the data changed) even though the newer time has less intervals than 23:55
+                beforeIntervals = -1;
+                currentIntervals = 0;
+            }
+
+            //the site is displaying data from 23:55 as the most recent data even though it has already dealt with data from 0:00
+            if (this.beforeTime.equals("0:00") && this.time.equals("23:55")) {
+                //ensure an email is NOT sent
+                beforeIntervals = 1;
+                currentIntervals = 0;
+            }
+
+            //check if an email should be sent
             if (!this.data.equals(this.beforeData) && beforeIntervals < currentIntervals) {
                 try {
                     Message message = new MimeMessage(this.session);
@@ -169,16 +190,31 @@ public class DataManager {
 
     public void runner() throws InterruptedException {
         while (this.run == true) {
-            //Try catch new as of sept 27: Used to catch seemingly unavoidable but rare "StaleElementReferenceExceptions"
+            //Try catch new as of sept 27: Used to catch seemingly unavoidable but rare "StaleElementReferenceExceptions" (modified sept 29 to catch
+            //another very rare exception)
             try {
                 this.getRecentData();
                 this.driver.navigate().refresh();
                 driver.switchTo().frame("56440ec5-34c3-4219-a280-eb7756441501");
-                Thread.sleep(10000);
+                Thread.sleep(10000);    
                 this.svg = new WebDriverWait(this.driver, Duration.ofSeconds(3)).until(ExpectedConditions.presenceOfElementLocated(By.tagName("svg")));
             } catch (StaleElementReferenceException Ex) {
-                System.err.println("Page error, refreshing...");
-                this.driver.navigate().refresh();
+                System.err.println("Stale element, reopening browser...");
+                driver.close();
+                driver = new ChromeDriver();
+                driver.get("https://www.misoenergy.org/markets-and-operations/real-time--market-data/real-time-displays/");
+                driver.switchTo().frame("56440ec5-34c3-4219-a280-eb7756441501");
+                Thread.sleep(10000);
+                this.svg = new WebDriverWait(this.driver, Duration.ofSeconds(3)).until(ExpectedConditions.presenceOfElementLocated(By.tagName("svg")));
+            } catch (InvalidSelectorException ex) {
+                //New as of sept 29 - driver randomly encountered a new error that stopped the site from loading
+                System.err.println("Can't find required element(s), reopening browser...");
+                driver.close();
+                driver = new ChromeDriver();
+                driver.get("https://www.misoenergy.org/markets-and-operations/real-time--market-data/real-time-displays/");
+                driver.switchTo().frame("56440ec5-34c3-4219-a280-eb7756441501");
+                Thread.sleep(10000);
+                this.svg = new WebDriverWait(this.driver, Duration.ofSeconds(3)).until(ExpectedConditions.presenceOfElementLocated(By.tagName("svg")));
             }
         }
     }

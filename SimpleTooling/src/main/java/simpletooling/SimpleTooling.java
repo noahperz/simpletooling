@@ -53,10 +53,8 @@ public class SimpleTooling {
         WebDriverManager.chromedriver().setup();
         WebDriver driver = new ChromeDriver();
         driver.get("https://www.misoenergy.org/markets-and-operations/real-time--market-data/real-time-displays/");
-
         driver.switchTo().frame("56440ec5-34c3-4219-a280-eb7756441501");
         DataManager thisManager = new DataManager(driver, session, receiver);
-
         thisManager.runner();
     }
 }
